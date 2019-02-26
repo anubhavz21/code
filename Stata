@@ -1,0 +1,305 @@
+import excel "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\2009-2017 Budget Data V3.1.xlsx", sheet("Sheet1") firstrow
+rename Manual cat
+destring fy4, replace
+set more off
+
+replace cat="SS" if inlist(budline1,"AG","HH","HR","CS")
+replace cat="EDU" if inlist(budline1,"HN","E")
+replace cat="CL" if inlist(budline1,"LB","LN","LQ","PV","L")
+replace cat="TT" if inlist(budline1,"HB","HW","ST","T","TD","TF")
+replace cat="HE" if inlist(budline1,"HL","HO","WP","S","SE")
+replace cat="HG" if inlist(budline1,"HA","HD")
+replace cat="PS" if inlist(budline1,"CO","PO","F")
+replace cat="PR" if budline1=="P"
+replace cat="ECON" if inlist(budline1,"ED","PU")
+
+replace cat="PS" if budline1=="PW" & inlist(idpro1,"CO","P")
+replace cat="SS" if budline1=="PW" & inlist(idpro1,"HH","CS")
+replace cat="HE" if budline1=="PW" & idpro1=="HL"
+replace cat="EDU" if budline1=="PW" & idpro1=="E"
+replace cat="HG" if budline1=="PW" & idpro1=="HD"
+replace cat="ECON" if budline1=="PW" & idpro1=="ED"
+replace cat="CL" if budline1=="PW" & idpro1=="PV"
+tab cat
+
+
+egen cap_total= rowtotal(fy1 fy2 fy3 fy4)
+
+collapse (sum) sum=cap (count) count=cap (mean) mean=cap, by(ado dist cat)
+
+reshape wide @sum @count @mean, i(dist ado) j(cat) string
+
+foreach i of varlist CLsum-TTmean{
+replace `i'=0 if mi(`i')
+}
+xtset dis adop
+
+egen grand_sum=rowtotal(CLsum ECONsum EDUsum HEsum HGsum PRsum PSsum SSsum TTsum)
+egen grand_count=rowtotal(CLcount ECONcount EDUcount HEcount HGcount PRcount PScount SScount TTcount)
+gen grand_mean=grand_sum/grand_count
+format %11.0g grand_sum
+
+gen CL_share=(CLsum/grand_sum)*100
+gen ECON_share=(ECONsum/grand_sum)*100
+gen EDU_share=(EDUsum/grand_sum)*100
+gen HE_share=(HEsum/grand_sum)*100
+gen HG_share=(HGsum/grand_sum)*100
+gen PR_share=(PRsum/grand_sum)*100
+gen PS_share=(PSsum/grand_sum)*100
+gen SS_share=(SSsum/grand_sum)*100
+gen TT_share=(TTsum/grand_sum)*100
+gen CL2=CL_share^2
+gen ECON2=ECON_share^2
+gen EDU2=EDU_share^2
+gen HE2=HE_share^2
+gen HG2=HG_share^2
+gen PR2=PR_share^2
+gen PS2=PS_share^2
+gen SS2=SS_share^2
+gen TT2=TT_share^2
+egen hhi=rowtotal(CL2 ECON2 EDU2 HE2 HG2 PR2 PS2 SS2 TT2)
+drop CL2 ECON2 EDU2 HE2 HG2 PR2 PS2 SS2 TT2
+
+format %6.0g CL_share ECON_share EDU_share HE_share HG_share PR_share PS_share SS_share TT_share hhi
+
+
+gen budyear=adopt+1
+merge 1:1 dis bud using "C:\Users\Gupta\Dropbox\Participatory Budgeting\Participation until 2017.dta"
+keep if _merge==3
+drop _merge
+order dist ado bud part, first
+
+merge 1:1 dis adopt using "C:\Users\Gupta\Dropbox\Participatory Budgeting\Demographics (Interpolated).dta"
+keep if _merge==3
+drop _merge
+
+* Multiply fractions by 100
+foreach var of varlist white hisp black asian other seniors poverty home repub dem no_party minor_party {
+replace `var'=`var'*100
+}
+
+label var CLsum "CL Sum"
+label var ECONsum "Eco Dev Sum"
+label var EDUsum "Edu Sum"
+label var HEsum "Heal Sum"
+label var HGsum "Hous Sum"
+label var PRsum "P&R Sum"
+label var PSsum "PubSafe Sum"
+label var SSsum "Social Su,"
+label var TTsum "Transp Sum"
+label var part "Participated in PB"
+label var first_part "Year of First Part in PB"
+label var dist "District"
+label var budyear "Budget Year"
+label var adopt "Adoption Year"
+label var grand_sum "Total Sum"
+label var grand_mean "Total Mean"
+label var grand_count "Total Count"
+label var EDUmean "EDU Mean"
+label var CLmean "CL Mean"
+label var PRmean "P&R Mean"
+label var hhi "HH Index"
+label var home "%OWNER"
+label var part "PARTICIPATE"
+label var income "INCOME"
+label var density "DENSITY"
+label var seniors "%SENIORS"
+label var dem "%DEMS"
+label var repub "%REPUB"
+label var white "%WHITE"
+label var hisp "%HISP"
+label var black "%BLACK"
+label var asian "%ASIAN"
+label var other "%OTHER"
+
+*drop if inlist(district,1,2,4,9,12,13,14,18,20,24,25,28,37,41,42,43,46,48,50,51) // Districts that never participated in PB
+
+* Generate "part2" variable that captures time since participation in PB
+gsort dist -part adopt, generate(gsort_dummy)
+bys dist: gen part2 = _n if part==1
+replace part2=0 if mi(part2)
+order part part2, first
+xtset
+
+label var part2 "PARTICIPATE (LEVEL)"
+
+replace grand_sum=grand_sum/1000
+replace EDUsum=EDUsum/1000
+replace CLsum=CLsum/1000
+replace PRsum=PRsum/1000
+replace HGsum=HGsum/1000
+replace grand_mean=grand_mean/1000
+replace EDUmean=EDUmean/1000
+replace CLmean=CLmean/1000
+replace PRmean=PRmean/1000
+replace HGmean=HGmean/1000
+
+
+
+* Total Spending in $$
+quietly reg grand_sum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("All Categories") drop(i.budyear grand_sum) addtext(Year Fixed Effects, YES) title("Table 1. Effect of Participatory Budgeting on Total Capital Expenditures by Category ($'000s)") replace
+quietly reg EDUsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education") drop(i.budyear EDUsum) addtext(Year Fixed Effects, YES) append
+quietly reg PRsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec.") drop(i.budyear PRsum) addtext(Year Fixed Effects, YES) append
+quietly reg HGsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing") drop(i.budyear HGsum) addtext(Year Fixed Effects, YES) append
+quietly reg CLsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Culture & Library") drop(i.budyear CLsum) addtext(Year Fixed Effects, YES) append
+quietly reg ECONsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev") drop(i.budyear ECONsum) addtext(Year Fixed Effects, YES) append
+quietly reg HEsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt") drop(i.budyear HEsum) addtext(Year Fixed Effects, YES) append
+quietly reg PSsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety") drop(i.budyear PSsum) addtext(Year Fixed Effects, YES) append
+quietly reg SSsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services") drop(i.budyear SSsum) addtext(Year Fixed Effects, YES) append
+quietly reg TTsum white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table1.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation") drop(i.budyear TTsum) addtext(Year Fixed Effects, YES) append
+
+
+
+* Mean Spending in $$
+quietly reg grand_mean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("All Categories") drop(i.budyear grand_mean) addtext(Year Fixed Effects, YES) title("Table 2. Effect of Participatory Budgeting on Average Expenditure ($'000s)") replace
+quietly reg EDUmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education") drop(i.budyear EDUmean) addtext(Year Fixed Effects, YES) append
+quietly reg PRmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec.") drop(i.budyear PRmean) addtext(Year Fixed Effects, YES) append
+quietly reg HGmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing") drop(i.budyear HGmean) addtext(Year Fixed Effects, YES) append
+quietly reg CLmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Culture & Library") drop(i.budyear CLmean) addtext(Year Fixed Effects, YES) append
+quietly reg ECONmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev") drop(i.budyear ECONmean) addtext(Year Fixed Effects, YES) append
+quietly reg HEmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt") drop(i.budyear HEmean) addtext(Year Fixed Effects, YES) append
+quietly reg PSmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety") drop(i.budyear PSmean) addtext(Year Fixed Effects, YES) append
+quietly reg SSmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services") drop(i.budyear SSmean) addtext(Year Fixed Effects, YES) append
+quietly reg TTmean white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table2.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation") drop(i.budyear TTmean) addtext(Year Fixed Effects, YES) append
+
+
+* Count of Projects
+quietly reg grand_count white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("All Categories") drop(i.budyear grand_count) addtext(Year Fixed Effects, YES) title("Table 3. Effect of Participatory Budgeting on Count of Projects") replace
+quietly reg EDUcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education") drop(i.budyear EDUcount) addtext(Year Fixed Effects, YES) append
+quietly reg PRcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec.") drop(i.budyear PRcount) addtext(Year Fixed Effects, YES) append
+quietly reg HGcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing") drop(i.budyear HGcount) addtext(Year Fixed Effects, YES) append
+quietly reg CLcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Culture & Library") drop(i.budyear CLcount) addtext(Year Fixed Effects, YES) append
+quietly reg ECONcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev") drop(i.budyear ECONcount) addtext(Year Fixed Effects, YES) append
+quietly reg HEcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt") drop(i.budyear HEcount) addtext(Year Fixed Effects, YES) append
+quietly reg PScount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety") drop(i.budyear PScount) addtext(Year Fixed Effects, YES) append
+quietly reg SScount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services") drop(i.budyear SScount) addtext(Year Fixed Effects, YES) append
+quietly reg TTcount white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table3.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation") drop(i.budyear TTcount) addtext(Year Fixed Effects, YES) append
+
+
+
+* %Share of Spending
+quietly reg EDU_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education (%)") nocons drop(i.budyear EDU_share) addtext(Year Fixed Effects, YES) addnote("Constant term included but not reported") title("Table 4. Effect of Participatory Budgeting on the Share of Functional Categories in Total Capital Spending") replace
+quietly reg PR_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec. (%)") nocons drop(i.budyear PR_share) addtext(Year Fixed Effects, YES) append
+quietly reg CL_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Cul. & Lib. (%)") nocons drop(i.budyear CL_share) addtext(Year Fixed Effects, YES) append
+quietly reg HG_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing (%)") nocons drop(i.budyear HG_share) addtext(Year Fixed Effects, YES) append
+quietly reg hhi white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("H.H.I.") nocons drop(i.budyear hhi) addtext(Year Fixed Effects, YES) append
+quietly reg ECON_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev") nocons drop(i.budyear ECON_share) addtext(Year Fixed Effects, YES) append
+quietly reg HE_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt") nocons drop(i.budyear HE_share) addtext(Year Fixed Effects, YES) append
+quietly reg PS_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety") nocons drop(i.budyear PS_share) addtext(Year Fixed Effects, YES) append
+quietly reg SS_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services") nocons drop(i.budyear SS_share) addtext(Year Fixed Effects, YES) append
+quietly reg TT_share white hisp black asian other seniors home repub dem density income part i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table4.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation") nocons drop(i.budyear TT_share) addtext(Year Fixed Effects, YES) append
+
+
+* %Share of Spending: using Part2 variable
+quietly reg EDU_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education (%)") nocons drop(i.budyear EDU_share) addtext(Year Fixed Effects, YES) addnote("Constant term included but not reported") title("Table 5. Effect of Level of Participation in PB on the Share of Functional Categories in Total Capital Spending") replace
+quietly reg PR_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec. (%)") nocons drop(i.budyear PR_share) addtext(Year Fixed Effects, YES) append
+quietly reg CL_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Cul. & Lib. (%)") nocons drop(i.budyear CL_share) addtext(Year Fixed Effects, YES) append
+quietly reg HG_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing (%)") nocons drop(i.budyear HG_share) addtext(Year Fixed Effects, YES) append
+quietly reg hhi white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("H.H.I.") nocons drop(i.budyear hhi) addtext(Year Fixed Effects, YES) append
+quietly reg ECON_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev (%)") nocons drop(i.budyear ECON_share) addtext(Year Fixed Effects, YES) append
+quietly reg HE_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt (%)") nocons drop(i.budyear HE_share) addtext(Year Fixed Effects, YES) append
+quietly reg PS_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety (%)") nocons drop(i.budyear PS_share) addtext(Year Fixed Effects, YES) append
+quietly reg SS_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services (%)") nocons drop(i.budyear SS_share) addtext(Year Fixed Effects, YES) append
+quietly reg TT_share white hisp black asian other seniors home repub dem density income part2 i.budyear, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table5.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation (%)") nocons drop(i.budyear TT_share) addtext(Year Fixed Effects, YES) append
+
+
+* Pre-post averages
+collapse (mean) CL_share=CL_share EDU_share=EDU_share PR_share=PR_share HG_share=HG_share ECON_share=ECON_share HE_share=HE_share PS_share=PS_share SS_share=SS_share TT_share=TT_share income=income density=density white=white hisp=hisp black=black asian=asian other=other seniors=seniors home=home repub=repub dem=dem hhi=hhi, by(dist part)
+
+label var CL_share "CL Share"
+label var EDU_share "Edu Share"
+label var PR_share "P&R Share"
+label var HG_share "Hous Share"
+label var part "PARTICIPATE"
+label var hhi "HH Index"
+label var home "%OWNER"
+label var part "PARTICIPATE"
+label var income "INCOME"
+label var density "DENSITY"
+label var seniors "%SENIORS"
+label var dem "%DEMS"
+label var repub "%REPUB"
+label var white "%WHITE"
+label var hisp "%HISP"
+label var black "%BLACK"
+label var asian "%ASIAN"
+label var other "%OTHER"
+
+* %Share Pre-Post
+quietly reg EDU_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Education (%)") nocons drop(i.budyear EDU_share) addtext(Year Fixed Effects, YES) addnote("Constant term included but not reported") title("Table 6. Participatory Budgeting Pre-Post Comparison: Categories as % of Total Capital Spending") replace
+quietly reg PR_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Parks & Rec. (%)") nocons drop(i.budyear PR_share) addtext(Year Fixed Effects, YES) append
+quietly reg CL_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Cul. & Lib. (%)") nocons drop(i.budyear CL_share) addtext(Year Fixed Effects, YES) append
+quietly reg HG_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Housing (%)") nocons drop(i.budyear HG_share) addtext(Year Fixed Effects, YES) append
+quietly reg hhi white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("H.H.I.") nocons drop(i.budyear hhi) addtext(Year Fixed Effects, YES) append
+quietly reg ECON_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Econ Dev (%)") nocons drop(i.budyear ECON_share) addtext(Year Fixed Effects, YES) append
+quietly reg HE_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Health & Envrmnt (%)") nocons drop(i.budyear HE_share) addtext(Year Fixed Effects, YES) append
+quietly reg PS_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Public Safety (%)") nocons drop(i.budyear PS_share) addtext(Year Fixed Effects, YES) append
+quietly reg SS_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Social Services (%)") nocons drop(i.budyear SS_share) addtext(Year Fixed Effects, YES) append
+quietly reg TT_share white hisp black asian other seniors home repub dem density income part, robust
+outreg2 using "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\Table6.doc", st(coef tstat) par(tstat) bdec(2) tdec(2) label ctitle("Transportation (%)") nocons drop(i.budyear TT_share) addtext(Year Fixed Effects, YES) append
+
+** Summary Stats
+use "C:\Users\Gupta\Dropbox\Participatory Budgeting\My Budget Data\ALL_MERGED.dta", clear
+tabstat dist pop density white hisp black asian other seniors income poverty home  repub dem part grand_sum grand_count, stat(mean sd min max) format(%13.2f) column(stats)
+
+
+
